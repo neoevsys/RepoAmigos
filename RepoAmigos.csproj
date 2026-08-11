@@ -1,0 +1,108 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <AssemblyName>RepoAmigos</AssemblyName>
+    <Product>RepoAmigos</Product>
+    <!-- Tiene que ir a la par de PluginVersion en Plugin.cs y de version_number
+         en manifest.json. Es la que ven las propiedades del archivo y la que
+         compara compilar.ps1 entre perfiles; si se queda atras, dos DLL distintas
+         se anuncian como la misma version. -->
+    <Version>1.5.0</Version>
+    <LangVersion>latest</LangVersion>
+    <!-- Unity/Mono no soporta los helpers de nullable ni los refs generados de mas -->
+    <Nullable>disable</Nullable>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <!-- Silencia el aviso de que las DLL del juego no tienen version fuerte -->
+    <NoWarn>$(NoWarn);CS0436</NoWarn>
+  </PropertyGroup>
+
+  <!-- ============================================================
+       Rutas del juego y de BepInEx.
+       Si mueves REPO de disco o cambias de perfil en Thunderstore,
+       esto es lo unico que hay que tocar.
+       ============================================================ -->
+  <PropertyGroup>
+    <RepoGameDir>D:\SteamLibrary\steamapps\common\REPO</RepoGameDir>
+    <RepoManagedDir>$(RepoGameDir)\REPO_Data\Managed</RepoManagedDir>
+    <RepoProfileDir>$(AppData)\Thunderstore Mod Manager\DataFolder\REPO\profiles\Default</RepoProfileDir>
+    <BepInExCoreDir>$(RepoProfileDir)\BepInEx\core</BepInExCoreDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- BepInEx + Harmony -->
+    <Reference Include="BepInEx">
+      <HintPath>$(BepInExCoreDir)\BepInEx.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(BepInExCoreDir)\0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+
+    <!-- Codigo del juego -->
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(RepoManagedDir)\Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Assembly-CSharp-firstpass">
+      <HintPath>$(RepoManagedDir)\Assembly-CSharp-firstpass.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+
+    <!-- Unity -->
+    <Reference Include="UnityEngine">
+      <HintPath>$(RepoManagedDir)\UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(RepoManagedDir)\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.PhysicsModule">
+      <HintPath>$(RepoManagedDir)\UnityEngine.PhysicsModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>$(RepoManagedDir)\UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- REPO usa el Input System nuevo; el Input clasico puede quedar inerte -->
+    <Reference Include="Unity.InputSystem">
+      <HintPath>$(RepoManagedDir)\Unity.InputSystem.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.AudioModule">
+      <HintPath>$(RepoManagedDir)\UnityEngine.AudioModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.AnimationModule">
+      <HintPath>$(RepoManagedDir)\UnityEngine.AnimationModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.ParticleSystemModule">
+      <HintPath>$(RepoManagedDir)\UnityEngine.ParticleSystemModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UI">
+      <HintPath>$(RepoManagedDir)\UnityEngine.UI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+
+    <!-- Photon: REPO es multijugador, casi todo lo importante pasa por aqui -->
+    <Reference Include="PhotonUnityNetworking">
+      <HintPath>$(RepoManagedDir)\PhotonUnityNetworking.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="PhotonRealtime">
+      <HintPath>$(RepoManagedDir)\PhotonRealtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Photon3Unity3D">
+      <HintPath>$(RepoManagedDir)\Photon3Unity3D.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>

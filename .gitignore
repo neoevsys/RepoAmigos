@@ -1,0 +1,19 @@
+# Compilacion
+bin/
+obj/
+
+# Paquetes generados por empaquetar.ps1
+dist/
+
+# Basura de editores y del sistema
+.vs/
+.idea/
+*.user
+*.suo
+Thumbs.db
+desktop.ini
+
+# Las DLL del juego NO se suben: son propiedad de Semiwork y pesan.
+# El .csproj las referencia desde la instalacion local de REPO.
+*.dll
+!Patches/**/*.cs
