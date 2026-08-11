@@ -77,6 +77,13 @@ namespace RepoAmigos.Patches
                 "Ingeniero", "Tecla", KeyCode.J,
                 "Tecla que recarga a tope el objeto que tengas agarrado.");
 
+            // La 1.4.x tenia aqui un "AvisarAlRechazar" para el mensaje de "solo el
+            // ingeniero puede extraer". Al quitar ese candado la clave dejo de leerse,
+            // pero BepInEx NO borra las huerfanas: se quedan escritas en el .cfg de
+            // cada jugador, y quien la vea creera que sigue haciendo algo. Se elimina
+            // explicitamente para que desaparezca en el primer arranque.
+            config.Remove(new ConfigDefinition("Ingeniero", "AvisarAlRechazar"));
+
             Cargas = config.Bind(
                 "Ingeniero", "Cargas", 5,
                 new ConfigDescription("Reparaciones disponibles a la vez.",
@@ -107,11 +114,15 @@ namespace RepoAmigos.Patches
             _temporizador = MinutosRecarga.Value * 60f;
         }
 
+        /// <summary>Como se usa el rol. Ver el comentario en RolMedico.TextoDeUso.</summary>
+        internal static string TextoDeUso()
+        {
+            return $"[{Tecla.Value}] recargar lo que lleves en las manos  -  {_cargas}/{Cargas.Value} reparaciones";
+        }
+
         internal static void AvisarUso()
         {
-            SemiFunc.UIFocusText(
-                $"[{Tecla.Value}] recargar lo que lleves en las manos  -  {_cargas}/{Cargas.Value} reparaciones",
-                new Color(0.4f, 0.8f, 1f), Color.white, 5f);
+            SemiFunc.UIFocusText(TextoDeUso(), Roles.ColorIngeniero, Color.white, 5f);
         }
 
         // =====================================================================
@@ -213,7 +224,16 @@ namespace RepoAmigos.Patches
 
             // Ya lleno: no se gasta carga. Que una reparacion se evapore por pulsar
             // sobre algo que ya estaba a tope seria de las cosas mas molestas posibles.
-            if (bateria.batteryLife >= 99.5f)
+            //
+            // OJO: esta comprobacion SOLO vale si mando yo. En un cliente batteryLife
+            // no se gasta nunca en local — todo el desgaste de ItemBattery.Update esta
+            // detras de IsMasterClientOrSingleplayer — y solo se reescribe cuando al
+            // anfitrion le cambia el NUMERO DE BARRAS, redondeado a barras enteras.
+            // O sea que mientras el objeto marque las barras llenas, un cliente lee
+            // exactamente 100 aunque el anfitrion lo tenga a media barra menos. Con el
+            // filtro puesto aqui, el cliente se creia que estaba lleno, decia "ya esta
+            // a tope" y ni siquiera mandaba la peticion: el rol no funcionaba.
+            if (SemiFunc.IsMasterClientOrSingleplayer() && bateria.batteryLife >= 99.5f)
             {
                 SemiFunc.UIFocusText("Ya esta a tope de bateria", naranja, Color.white, 2f);
                 return;
@@ -250,6 +270,13 @@ namespace RepoAmigos.Patches
                     SendOptions.SendReliable);
 
                 Plugin.Debug($"Ingeniero: no soy master, recarga pedida para el objeto {vista.ViewID}.");
+
+                // Desde un cliente esto es una peticion, no un hecho: el anfitrion
+                // puede encontrarse con que el objeto ya no existe. Decir "Bateria al
+                // maximo" aqui seria mentir en el unico caso en que importa.
+                SemiFunc.UIFocusText($"Recarga enviada  ({_cargas}/{Cargas.Value})",
+                    azul, Color.white, 3f);
+                return;
             }
 
             SemiFunc.UIFocusText($"Bateria al maximo  ({_cargas}/{Cargas.Value})",
@@ -261,17 +288,27 @@ namespace RepoAmigos.Patches
         /// <summary>
         /// Deja la bateria al 100%. Solo tiene efecto en el anfitrion o en un jugador
         /// (ver TRAMPA 2 de la cabecera).
+        ///
+        /// NO se usa SetBatteryLife, aunque sea lo obvio, por dos motivos leidos del
+        /// IL del juego:
+        ///
+        ///   1. No levanta una bateria agotada. Empieza con `if (batteryLife &gt; 0)` y
+        ///      en el else la deja a cero — justo el caso que este rol arregla.
+        ///   2. Termina llamando a BatteryFullPercentChange(barras, false) con ese
+        ///      `false` CABLEADO. Ese argumento es "charge", y en false hace sonar
+        ///      AssetManager.batteryDrainSound: la recarga sonaba a bateria
+        ///      AGOTANDOSE, en todas las maquinas. Y encima al frame siguiente el
+        ///      bloque solo-master de ItemBattery.Update veia el salto de barras y
+        ///      difundia OTRA vez, ya con charge=true. Dos paquetes y dos sonidos
+        ///      contradictorios por cada pulsacion.
+        ///
+        /// Escribiendo solo el campo se deja que el propio Update del juego detecte el
+        /// cambio de barras y difunda EL, una sola vez y con el sonido de carga bueno,
+        /// que es exactamente lo que pasa cuando cargas en la estacion.
         /// </summary>
         private static void RecargarDelTodo(ItemBattery bateria)
         {
-            // TRAMPA 1 de la cabecera: SetBatteryLife no levanta una bateria agotada,
-            // asi que primero se le da un empujon por encima de cero. El valor da
-            // igual, solo tiene que ser positivo para que entre por la rama buena.
-            if (bateria.batteryLife <= 0f) bateria.batteryLife = 1f;
-
-            // El parametro es un PORCENTAJE, no un numero de barras: el metodo hace
-            // batteryLifeInt = round(batteryLife / (100 / batteryBars)).
-            bateria.SetBatteryLife(100);
+            bateria.batteryLife = 100f;
         }
 
         /// <summary>
@@ -280,17 +317,44 @@ namespace RepoAmigos.Patches
         /// </summary>
         internal static void EjecutarRecargaRemota(object datos)
         {
-            if (!(datos is int)) return;
+            // Cada salida deja rastro a proposito. Antes las tres se iban en silencio
+            // y el unico Plugin.Debug estaba en el camino de exito: si una recarga no
+            // llegaba, el ingeniero se quedaba sin la reparacion, leia "Bateria al
+            // maximo" y NI SU LOG NI EL DEL ANFITRION tenian una sola linea. Desde
+            // fuera era indistinguible de "el rol no funciona".
+            if (!(datos is int))
+            {
+                Plugin.Log.LogWarning($"Ingeniero: peticion de recarga con datos raros ({datos}). Ignorada.");
+                return;
+            }
 
-            PhotonView vista = PhotonView.Find((int)datos);
-            if (vista == null) return;
+            int viewId = (int)datos;
+
+            PhotonView vista = PhotonView.Find(viewId);
+            if (vista == null)
+            {
+                // Lo normal es que el objeto se haya destruido entre el envio y esto:
+                // lo revienta un enemigo, cae al vacio, o ya se esta cambiando de nivel.
+                Plugin.Log.LogWarning($"Ingeniero: recarga para el objeto {viewId}, que ya no existe.");
+                return;
+            }
 
             ItemBattery bateria = vista.GetComponentInChildren<ItemBattery>(true);
-            if (bateria == null || bateria.isUnchargable) return;
+            if (bateria == null)
+            {
+                Plugin.Log.LogWarning($"Ingeniero: el objeto {viewId} no tiene ItemBattery.");
+                return;
+            }
+
+            if (bateria.isUnchargable)
+            {
+                Plugin.Log.LogWarning($"Ingeniero: el objeto {viewId} no se puede recargar.");
+                return;
+            }
 
             RecargarDelTodo(bateria);
 
-            Plugin.Debug($"Ingeniero: recarga remota aplicada al objeto {(int)datos}.");
+            Plugin.Debug($"Ingeniero: recarga remota aplicada al objeto {viewId}.");
         }
     }
 }

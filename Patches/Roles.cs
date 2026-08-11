@@ -4,6 +4,7 @@ using HarmonyLib;
 using Photon.Pun;
 using Photon.Realtime;
 using System.Collections.Generic;
+using System.Reflection;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -106,6 +107,21 @@ namespace RepoAmigos.Patches
                 "Tecla que recuerda tu rol. Tab es tambien la del mapa del juego, asi que " +
                 "las dos cosas salen a la vez; no se pisan, pero se puede cambiar aqui.");
         }
+
+        // =====================================================================
+        // Colores de cada rol
+        //
+        // Viven aqui y no en cada archivo porque los usan dos sitios: el anuncio
+        // del principio del nivel (dentro de cada rol) y el recordatorio de la
+        // tecla (aqui). Duplicarlos hacia facil que un dia el mismo rol saliera de
+        // un color al empezar y de otro al consultarlo.
+        // =====================================================================
+
+        internal static readonly Color ColorMedico     = new Color(0.4f, 1f,    0.5f);
+        internal static readonly Color ColorIngeniero  = new Color(0.4f, 0.8f,  1f);
+        internal static readonly Color ColorSaboteador = new Color(1f,   0.3f,  0.3f);
+        internal static readonly Color ColorRastreador = new Color(1f,   0.85f, 0.3f);
+        internal static readonly Color ColorSinRol     = new Color(0.75f, 0.75f, 0.75f);
 
         // =====================================================================
         // Estado del reparto
@@ -221,9 +237,7 @@ namespace RepoAmigos.Patches
                 // El recordatorio va ANTES del interruptor de los roles a proposito:
                 // si estan apagados en el .cfg, pulsar la tecla tiene que decirlo en
                 // vez de no hacer nada, que se lee como que el mod esta roto.
-                if (RecordarRol != null && RecordarRol.Value
-                    && EnPartida() && TeclaPulsada(TeclaRecordar.Value))
-                    Recordar();
+                TicDelRecordatorio();
 
                 if (Enabled == null || !Enabled.Value) return;
 
@@ -430,49 +444,120 @@ namespace RepoAmigos.Patches
         }
 
         /// <summary>
-        /// Vuelve a mostrar el rol y como se usa, a peticion del jugador.
+        /// El recordatorio de la tecla: nombre del rol y como se usa, en UNA sola
+        /// linea.
         ///
-        /// Reutiliza Anunciar() en vez de repetir los textos: asi el recordatorio
-        /// no puede quedarse desfasado respecto al aviso del principio del nivel, y
-        /// los AvisarUso() de cada rol traen el estado del momento — el del medico,
-        /// por ejemplo, dice cuantas cargas le quedan AHORA, no cuantas empezo.
+        /// Va todo junto a proposito. Antes esto llamaba a Anunciar(), que reparte la
+        /// informacion entre el cartelon (el nombre del rol) y el texto de foco (como
+        /// se usa). El cartelon se desvanece por su cuenta, asi que al mantener la
+        /// tecla te quedabas viendo "[J] recargar..." sin poder leer ya QUE eras.
         ///
-        /// Lo unico propio es la rama de "sin rol". Sin ella, quien no tiene rol
-        /// pulsaria la tecla y no pasaria nada, que es indistinguible de que el mod
-        /// no funcione; y el motivo casi nunca es evidente (falta gente en la sala,
-        /// o el reparto de este nivel no le toco).
+        /// El texto de uso lo pone cada rol en su TextoDeUso(), asi que sigue habiendo
+        /// una sola fuente de verdad y trae el estado del momento: el del medico dice
+        /// las cargas que le quedan AHORA.
         /// </summary>
-        private static void Recordar()
+        private static string TextoDelRecordatorio(out Color color)
         {
-            if (Enabled != null && Enabled.Value && _local != Rol.Ninguno)
+            if (Enabled != null && Enabled.Value)
             {
-                Anunciar();
+                switch (_local)
+                {
+                    case Rol.Medico:
+                        color = ColorMedico;
+                        return "ERES EL MEDICO  -  " + RolMedico.TextoDeUso();
+
+                    case Rol.Ingeniero:
+                        color = ColorIngeniero;
+                        return "ERES EL INGENIERO  -  " + RolIngeniero.TextoDeUso();
+
+                    case Rol.Saboteador:
+                        color = ColorSaboteador;
+                        return "ERES EL SABOTEADOR  -  " + RolSaboteador.TextoDeUso();
+
+                    case Rol.Rastreador:
+                        color = ColorRastreador;
+                        return "ERES EL RASTREADOR  -  " + RolRastreador.TextoDeUso();
+                }
+            }
+
+            // Sin rol hay que decir POR QUE. Si no, pulsar la tecla y que no pase
+            // nada es indistinguible de que el mod este roto, y el motivo casi nunca
+            // es evidente desde dentro de la partida.
+            color = ColorSinRol;
+
+            if (Enabled == null || !Enabled.Value)
+                return "SIN ROL  -  los roles estan desactivados en la configuracion";
+
+            if (!_repartoHecho)
+                return "SIN ROL  -  todavia no se han repartido los roles de este nivel";
+
+            List<PlayerAvatar> presentes = SemiFunc.PlayerGetAll();
+            int cuantos = presentes == null ? 0 : presentes.Count;
+
+            return cuantos < MinJugadores.Value
+                ? $"SIN ROL  -  hacen falta {MinJugadores.Value} jugadores y sois {cuantos}"
+                : "SIN ROL  -  este nivel no te ha tocado ningun rol";
+        }
+
+        // =====================================================================
+        // Mantener el recordatorio en pantalla mientras se aguanta la tecla
+        //
+        // MissionUI.MissionText, que es donde acaba SemiFunc.UIFocusText, empieza
+        // con `if (messageTimer > 0) return;`: mientras hay un mensaje puesto,
+        // IGNORA cualquier llamada nueva. Asi que no se puede refrescar el aviso
+        // repitiendolo cada frame, que era lo primero que uno intenta.
+        //
+        // Lo que si funciona es rellenarle el temporizador. MissionUI.Update solo
+        // hace `messageTimer -= deltaTime` y, cuando llega a cero, oculta el texto.
+        // Manteniendolo por encima de cero el mensaje se queda quieto en pantalla y
+        // ademas no se repite la animacion de entrada, porque MissionText no se
+        // vuelve a ejecutar.
+        // =====================================================================
+
+        private static readonly FieldInfo _campoTemporizadorUI =
+            AccessTools.Field(typeof(MissionUI), "messageTimer");
+
+        /// <summary>Deja el aviso en pantalla un poco mas. Devuelve false si no se pudo.</summary>
+        private static bool MantenerAvisoVivo(float segundos)
+        {
+            if (_campoTemporizadorUI == null) return false;
+
+            MissionUI ui = MissionUI.instance;
+            if (ui == null) return false;
+
+            _campoTemporizadorUI.SetValue(ui, segundos);
+            return true;
+        }
+
+        private static bool _recordatorioEnPantalla;
+
+        /// <summary>
+        /// Se llama en cada frame. Muestra el recordatorio al pulsar y lo mantiene
+        /// mientras no se suelte la tecla.
+        /// </summary>
+        private static void TicDelRecordatorio()
+        {
+            if (RecordarRol == null || !RecordarRol.Value) return;
+            if (!EnPartida()) { _recordatorioEnPantalla = false; return; }
+
+            if (TeclaPulsada(TeclaRecordar.Value))
+            {
+                Color color;
+                string texto = TextoDelRecordatorio(out color);
+
+                // Duracion corta a proposito: mientras se aguanta la tecla la va
+                // renovando el bloque de abajo, y al soltar se va en ese margen.
+                SemiFunc.UIFocusText(texto, color, Color.white, 0.4f);
+                _recordatorioEnPantalla = true;
                 return;
             }
 
-            Color gris = new Color(0.75f, 0.75f, 0.75f);
-            string motivo;
+            if (!_recordatorioEnPantalla) return;
 
-            if (Enabled == null || !Enabled.Value)
-            {
-                motivo = "Los roles estan desactivados en la configuracion";
-            }
-            else if (!_repartoHecho)
-            {
-                motivo = "Todavia no se han repartido los roles de este nivel";
-            }
+            if (TeclaMantenida(TeclaRecordar.Value))
+                MantenerAvisoVivo(0.4f);
             else
-            {
-                List<PlayerAvatar> presentes = SemiFunc.PlayerGetAll();
-                int cuantos = presentes == null ? 0 : presentes.Count;
-
-                motivo = cuantos < MinJugadores.Value
-                    ? $"Hacen falta {MinJugadores.Value} jugadores y sois {cuantos}"
-                    : "Este nivel no te ha tocado ningun rol";
-            }
-
-            SemiFunc.UIBigMessage("SIN ROL", "-", 40f, gris, Color.white);
-            SemiFunc.UIFocusText(motivo, gris, Color.white, 4f);
+                _recordatorioEnPantalla = false;   // soltada: que se desvanezca sola
         }
 
         // =====================================================================
@@ -484,8 +569,73 @@ namespace RepoAmigos.Patches
         // GeneradorDePruebas.
         // =====================================================================
 
+        /// <summary>
+        /// El jugador esta escribiendo en el chat del juego.
+        ///
+        /// Hay que comprobarlo A MANO antes de reaccionar a cualquier tecla. El chat
+        /// de R.E.P.O. no es un InputField de Unity que se trague las pulsaciones:
+        /// es propio (ChatManager.AddLetterToChat), asi que las teclas siguen
+        /// llegando a todo el mundo mientras escribes. El propio juego lo comprueba
+        /// igual — GameDirector.Update empieza mirando ChatManager.instance.chatActive
+        /// y se sale si esta abierto.
+        ///
+        /// Sin esto, escribir "jaja" en el chat le gastaba una carga al medico y una
+        /// reparacion al ingeniero, porque sus teclas por defecto son G y J.
+        /// </summary>
+        private static readonly FieldInfo _campoChatActivo =
+            AccessTools.Field(typeof(ChatManager), "chatActive");
+
+        internal static EscribiendoResultado Escribiendo()
+        {
+            if (_campoChatActivo == null) return EscribiendoResultado.NoSePuedeSaber;
+
+            ChatManager chat = ChatManager.instance;
+            if (chat == null) return EscribiendoResultado.No;
+
+            object valor = _campoChatActivo.GetValue(chat);
+            if (!(valor is bool)) return EscribiendoResultado.NoSePuedeSaber;
+
+            return (bool)valor ? EscribiendoResultado.Si : EscribiendoResultado.No;
+        }
+
+        internal enum EscribiendoResultado { No, Si, NoSePuedeSaber }
+
+        /// <summary>
+        /// La tecla esta AGUANTADA ahora mismo, no recien pulsada.
+        ///
+        /// Mismo apano de doble sistema que TeclaPulsada: con el Input System nuevo
+        /// activo, el Input clasico puede devolver false siempre sin lanzar nada.
+        /// </summary>
+        internal static bool TeclaMantenida(KeyCode tecla)
+        {
+            if (Escribiendo() == EscribiendoResultado.Si) return false;
+
+            try
+            {
+                Keyboard teclado = Keyboard.current;
+                Key codigo;
+                if (teclado != null && System.Enum.TryParse(tecla.ToString(), true, out codigo))
+                {
+                    var control = teclado[codigo];
+                    if (control != null && control.isPressed) return true;
+                }
+            }
+            catch { /* el Input System nuevo puede no estar disponible */ }
+
+            try
+            {
+                if (Input.GetKey(tecla)) return true;
+            }
+            catch { /* lanza si el proyecto usa solo el Input System nuevo */ }
+
+            return false;
+        }
+
         internal static bool TeclaPulsada(KeyCode tecla)
         {
+            // Ver Escribiendo(): con el chat abierto las teclas siguen llegando aqui.
+            if (Escribiendo() == EscribiendoResultado.Si) return false;
+
             try
             {
                 Keyboard teclado = Keyboard.current;

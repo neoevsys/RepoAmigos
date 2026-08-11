@@ -98,11 +98,19 @@ namespace RepoAmigos.Patches
             _temporizador = MinutosRecarga.Value * 60f;
         }
 
+        /// <summary>
+        /// Como se usa el rol, con el estado del momento. Es texto y no un aviso en
+        /// pantalla porque lo usan dos sitios: el anuncio del principio del nivel y
+        /// el recordatorio de la tecla, que le pone delante el nombre del rol.
+        /// </summary>
+        internal static string TextoDeUso()
+        {
+            return $"[{Tecla.Value}] curar  -  {_cargas}/{Cargas.Value} cargas de {Curacion.Value} PV";
+        }
+
         internal static void AvisarUso()
         {
-            SemiFunc.UIFocusText(
-                $"[{Tecla.Value}] curar  -  {_cargas}/{Cargas.Value} cargas de {Curacion.Value} PV",
-                new Color(0.4f, 1f, 0.5f), Color.white, 5f);
+            SemiFunc.UIFocusText(TextoDeUso(), Roles.ColorMedico, Color.white, 5f);
         }
 
         // =====================================================================

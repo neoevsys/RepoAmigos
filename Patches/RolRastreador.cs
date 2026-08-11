@@ -76,11 +76,15 @@ namespace RepoAmigos.Patches
             _siguienteAviso = MinutosEntreAvisos.Value * 60f;
         }
 
+        /// <summary>Como se usa el rol. Ver el comentario en RolMedico.TextoDeUso.</summary>
+        internal static string TextoDeUso()
+        {
+            return $"Cada {MinutosEntreAvisos.Value:0} min sabras donde esta el monstruo mas cercano";
+        }
+
         internal static void AvisarUso()
         {
-            SemiFunc.UIFocusText(
-                $"Cada {MinutosEntreAvisos.Value:0} min sabras donde esta el monstruo mas cercano",
-                new Color(1f, 0.85f, 0.3f), Color.white, 5f);
+            SemiFunc.UIFocusText(TextoDeUso(), Roles.ColorRastreador, Color.white, 5f);
         }
 
         // =====================================================================

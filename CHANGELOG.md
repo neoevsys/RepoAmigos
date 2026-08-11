@@ -21,6 +21,16 @@ Ahora hay un único enganche, un Postfix sobre `PhysGrabCart.ObjectsInCart`, que
 
 De miles de callbacks de física por segundo a dos reconciliaciones. Y funciona igual en anfitrión y en clientes.
 
+**El recordatorio de `Tab` ahora se queda mientras aguantas la tecla.** Antes salía y se desvanecía. La causa está en `MissionUI.MissionText`, que abre con `if (messageTimer > 0) return;` — mientras hay un mensaje puesto ignora cualquier llamada nueva, así que repetir el aviso cada frame no servía de nada. Lo que sí funciona es rellenarle el temporizador, y de paso no se repite la animación de entrada. Además la línea ahora es autosuficiente (`ERES EL INGENIERO - [J] recargar...`), porque el nombre del rol iba en el cartelón y ese se desvanecía solo, dejándote leyendo cómo se usa un rol que ya no recordabas cuál era.
+
+**Escribir en el chat ya no gasta habilidades.** El chat de R.E.P.O. no es un `InputField` de Unity que se trague las pulsaciones: es propio, y las teclas siguen llegando a todo el mundo. Escribir «jaja» le gastaba una carga al médico y una reparación al ingeniero, porque sus teclas son `G` y `J`. Ahora se comprueba `ChatManager.chatActive` igual que hace el propio juego en `GameDirector.Update`.
+
+**Tres arreglos más en la recarga del ingeniero**, salidos de una revisión adversarial del código:
+
+- La recarga **sonaba a batería agotándose**, y difundía dos veces. `SetBatteryLife` termina en `BatteryFullPercentChange(barras, false)` con ese `false` cableado, que es el argumento «charge» y dispara el sonido de descarga; al frame siguiente el `Update` del anfitrión veía el salto de barras y difundía otra vez, ya con el sonido bueno. Ahora solo se escribe el campo y difunde el juego, una vez y con el sonido correcto.
+- En un cliente, «ya está a tope» **era mentira y bloqueaba la recarga**. `batteryLife` no se gasta nunca en local fuera del anfitrión y solo se reescribe redondeado a barras enteras, así que mientras el objeto marcara las barras llenas el cliente leía exactamente 100 y ni mandaba la petición. El filtro ahora solo se aplica donde el dato es fiable.
+- Los tres rechazos del anfitrión eran **mudos**. Si el objeto se destruía entre la petición y su llegada, el ingeniero perdía la reparación, leía «Batería al máximo» y no quedaba ni una línea en ningún log. Ahora cada salida deja rastro, y desde un cliente el mensaje dice «Recarga enviada», que es lo que de verdad ha pasado.
+
 ## 1.4.5
 
 **El pato ya dice por qué no hace nada.**

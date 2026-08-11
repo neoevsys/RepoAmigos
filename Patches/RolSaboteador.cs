@@ -128,11 +128,15 @@ namespace RepoAmigos.Patches
             _recarga = 0f;   // empieza la partida con la habilidad lista
         }
 
+        /// <summary>Como se usa el rol. Ver el comentario en RolMedico.TextoDeUso.</summary>
+        internal static string TextoDeUso()
+        {
+            return $"[{Tecla.Value}] apagon de {MinutosApagon.Value:0} min  -  recarga {MinutosRecarga.Value:0} min";
+        }
+
         internal static void AvisarUso()
         {
-            SemiFunc.UIFocusText(
-                $"[{Tecla.Value}] apagon de {MinutosApagon.Value:0} min  -  recarga {MinutosRecarga.Value:0} min",
-                new Color(1f, 0.3f, 0.3f), Color.white, 5f);
+            SemiFunc.UIFocusText(TextoDeUso(), Roles.ColorSaboteador, Color.white, 5f);
         }
 
         // =====================================================================
